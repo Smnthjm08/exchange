@@ -1,2 +1,7 @@
 /target
 .DS_Store
+# Environment configuration
+**/.env
+
+# VS Code Configuration
+**/.vscode/
