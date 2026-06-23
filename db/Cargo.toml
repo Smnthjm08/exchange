@@ -1,11 +1,7 @@
 [package]
-name = "api"
+name = "db"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-actix-web = "4.13.0"
-dotenv = "0.15.0"
 sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio"] }
-db = { path = "../db" }
-anyhow = "1"

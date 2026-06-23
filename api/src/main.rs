@@ -3,11 +3,11 @@ use actix_web::{
     web::{self},
     App, HttpResponse, HttpServer, Responder,
 };
+use db::init_db;
 use dotenv::dotenv;
-use sqlx::postgres::PgPoolOptions;
 
 use crate::routes::{
-    auth_route::{signin_handler, signup_handler},
+    auth_route::{login_handler, signup_handler},
     equity_route::get_available_equity,
     onramp_route::onramp_fund_handler,
     order_route::{create_order_handler, delete_order_by_id_handler},
@@ -23,68 +23,66 @@ async fn health() -> impl Responder {
 }
 
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> anyhow::Result<()> {
     dotenv().ok();
 
-    let env = std::env::var("ENV").expect("ENV must be set");
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let env = std::env::var("ENV")?;
+    let database_url = std::env::var("DATABASE_URL")?;
     println!("env: {}", env);
 
-    let pool = match PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&database_url)
-        .await
-    {
-        Ok(pool) => {
-            println!("connection successful!");
-            pool
-        }
-        Err(err) => {
-            println!("error connecting to database: {}", err);
-            std::process::exit(1);
-        }
-    };
+    let pool = init_db(&database_url).await?;
+
+    sqlx::migrate!("../migrations").run(&pool).await?;
+
+    println!("Database ready");
 
     println!("🚀 Server started successfully!");
 
+    let pool_data = web::Data::new(pool);
+
     HttpServer::new(move || {
-        App::new().app_data(web::Data::new(pool.clone())).service(
-            web::scope("/api/v1")
-                // health
-                .service(health)
-                // auth
-                .service(
-                    web::scope("/auth")
-                        .route("/login", web::post().to(signin_handler))
-                        .route("/signup", web::post().to(signup_handler)),
-                )
-                // onramp
-                .route("/onramp", web::post().to(onramp_fund_handler))
-                // equity
-                .service(
-                    web::scope("/equity").route("/available", web::get().to(get_available_equity)),
-                )
-                // order
-                .service(
-                    web::scope("/order")
-                        .route("/", web::post().to(create_order_handler))
-                        .route("/{id}", web::delete().to(delete_order_by_id_handler)),
-                )
-                // postions
-                .service(
-                    web::scope("/postions")
-                        .route("/open/{market_id}", web::get().to(get_open_positions))
-                        .route("/closed/{market_id}", web::get().to(get_closed_postions)),
-                )
-                // orders
-                .service(
-                    web::scope("/orders")
-                        .route("/open/{market_id}", web::post().to(get_open_orders_handler))
-                        .route("/{market_id}", web::delete().to(get_orders_handler)),
-                ),
-        )
+        App::new()
+            .app_data(web::Data::new(pool_data.clone()))
+            .service(
+                web::scope("/api/v1")
+                    // health
+                    .service(health)
+                    // auth
+                    .service(
+                        web::scope("/auth")
+                            .route("/login", web::post().to(login_handler))
+                            .route("/signup", web::post().to(signup_handler)),
+                    )
+                    // onramp
+                    .route("/onramp", web::post().to(onramp_fund_handler))
+                    // equity
+                    .service(
+                        web::scope("/equity")
+                            .route("/available", web::get().to(get_available_equity)),
+                    )
+                    // order
+                    .service(
+                        web::scope("/order")
+                            .route("/", web::post().to(create_order_handler))
+                            .route("/{id}", web::delete().to(delete_order_by_id_handler)),
+                    )
+                    // postions
+                    .service(
+                        web::scope("/postions")
+                            .route("/open/{market_id}", web::get().to(get_open_positions))
+                            .route("/closed/{market_id}", web::get().to(get_closed_postions)),
+                    )
+                    // orders
+                    .service(
+                        web::scope("/orders")
+                            .route("/open/{market_id}", web::post().to(get_open_orders_handler))
+                            .route("/{market_id}", web::delete().to(get_orders_handler)),
+                    ),
+            )
     })
     .bind(("127.0.0.1", 8080))?
     .run()
-    .await
+    .await?;
+
+    Ok(())
 }
