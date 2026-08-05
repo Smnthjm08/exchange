@@ -1,7 +1,6 @@
 use actix_web::{
-    self, get,
+    self, App, HttpResponse, HttpServer, Responder, get,
     web::{self},
-    App, HttpResponse, HttpServer, Responder,
 };
 use db::init_db;
 mod utils;

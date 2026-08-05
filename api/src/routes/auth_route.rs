@@ -1,7 +1,7 @@
-use actix_web::{error, web, HttpResponse};
+use actix_web::{HttpResponse, error, web};
 use serde::{Deserialize, Serialize};
 
-use crate::{utils, AppState};
+use crate::{AppState, utils};
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub email: String,
