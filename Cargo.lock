@@ -7,5 +7,17 @@ name = "api"
 version = "0.1.0"
 
 [[package]]
+name = "common"
+version = "0.1.0"
+
+[[package]]
+name = "db"
+version = "0.1.0"
+
+[[package]]
+name = "engine"
+version = "0.1.0"
+
+[[package]]
 name = "feed"
 version = "0.1.0"
