@@ -47,40 +47,63 @@ perp-v1/
 
 ## V1 task breakdown (mapped to slides)
 
-**Phase 1 — Price feed** (foundation for everything else)
+**Phase 0 — Shared types** (slides 75–77)
 
-- [ ] `feed` crate: `tokio-tungstenite` connection to Binance SOL ticker
-- [ ] Push ticks into an `mpsc` channel or shared `Arc<RwLock<Decimal>>`
+- [ ] `common`: `Side::{Long,Short}`, `OrderType::{Limit,Market}`, `OrderStatus::{Open,Filled,Cancelled}`
+- [ ] `Collateral { available, locked }` — margin moves available → locked on order placement
+- [ ] `Order { order_id, market, side, qty, margin, order_type, price, status }`
+- [ ] `Position { market, side, qty, margin, average_price, liquidation_price, pnl }`
+- [ ] `Fill { maker, taker, market, qty, price, long, short }` — four user refs, not one
+- [ ] `Decimal` everywhere for price/qty/margin; never `f64`
 
-**Phase 2 — Schema & DB layer** (slides 62–64)
+**Phase 1 — Price feed** (slide 78)
 
-- [ ] `users`: id, equity/balance
-- [ ] `orders`: id, user_id, market, side, price, qty, margin, status (open/filled/closed)
-- [ ] `fills`: id, order_id, price, qty, timestamp
-- [ ] `positions`: derived from fills — market, side, qty, entry price, margin, status (open/closed/liquidated)
-- [ ] sqlx migrations for all four
+- [ ] `feed` crate: `tokio-tungstenite` connection to the Binance SOL ticker
+- [ ] Deserialize into `common::Tick`, push into an `mpsc` channel
+- [ ] Feeds `Orderbook::index_price` — kept distinct from `last_traded_price` (slide 76)
+- [ ] `src/bin/probe.rs` to eyeball the stream before the engine exists
 
-**Phase 3 — Matching engine** (slides 26–41)
+**Phase 2 — Orderbook state** (slide 76)
 
-- [ ] In-memory orderbook (`BTreeMap<Price, Vec<Order>>` per side)
-- [ ] `POST /create` places long/short, matches against opposite side if available
-- [ ] On match → write `fill`, update both users' `position` + `equity`
+- [ ] Price-level aggregation, not a flat order list:
+      `Level { available_qty, open_orders: Vec<OpenOrder> }`
+- [ ] `Orderbook { bids: BTreeMap<Decimal, Level>, asks: BTreeMap<Decimal, Level>,
+    last_traded_price, index_price }` — `BTreeMap` keeps levels sorted for walking
+- [ ] `Orderbooks = HashMap<Market, Orderbook>` — SOL **and** ETH from the start
+- [ ] `OpenOrder { user_id, qty, filled_qty, order_id, created_at }`
 
-**Phase 4 — Live equity & liquidation** (slides 42–53)
+**Phase 3 — Matching engine** (slides 40–54)
 
-- [ ] On every price tick, recompute equity per open position: `equity = margin + (current_price - entry_price) * qty * direction`
-- [ ] Background `tokio::time::interval` loop checks all open positions for equity ≈ 0
-- [ ] On liquidation: market-close by walking the opposite side of the book (slide 48–49's fill-across-levels logic), realize the loss
+- [ ] `POST /create` locks `equity` from the body as margin, then places long/short
+- [ ] Match against the opposite side, walking levels by price using `available_qty`
+- [ ] On match → emit `Fill`, update both users' `positions` + `collateral`
+- [ ] Closing a position = opening the opposite side for the same qty (slides 44–45)
+- [ ] Maintain the zero-sum invariant: open longs == open shorts at all times (slide 53)
 
-**Phase 5 — REST API** (slides 55–60)
+**Phase 4 — Liquidation** (slides 55–66)
 
-- [ ] `POST /create`
-- [ ] `GET /positions/:market`
+- [ ] Compute and store `liquidation_price` on the position when it opens (slide 55) —
+      the tick loop compares against this instead of recomputing equity per position
+- [ ] Background `tokio::time::interval` loop checks open positions against `index_price`
+- [ ] On liquidation: market-close by walking the opposite side across levels
+      (slide 61–62: `90.20*100 + 90.19*400 + 90.18*1285`), realize the loss
+- [ ] Known edge case, deferred (slides 64–66): a thin book can close below the user's
+      collateral and drive the balance negative — no insurance fund in V1
+
+**Phase 5 — REST API** (slides 68–74)
+
+- [ ] `POST /create` — body: `{ price, qty, equity, type: "LONG"|"SHORT", market }`
+- [ ] `GET /positions/:market` (e.g. `SOL_PERP`)
 - [ ] `GET /orders/open`
 - [ ] `GET /fills`
 - [ ] `GET /orders/:marketId`
 - [ ] `GET /positions/closed/:marketId`
 
-**Explicitly out of scope for V1** (slide 54): stop-loss/take-profit, funding rate, insurance fund, ADL.
+**Phase 6 — Persistence** (our addition, not in the deck)
 
-Want me to scaffold this as an actual `cargo new` workspace with the crates and starter `Cargo.toml`/`main.rs` files so you have something running end to end?
+- [ ] `db`: sqlx migrations for `users`, `orders`, `fills`, `closed_positions`
+- [ ] Write-behind from the engine — never block matching on a DB round trip
+- [ ] Hash passwords (the deck stores `password: 123123` plaintext as a teaching shortcut)
+
+**Explicitly out of scope for V1** (slide 67): stop-loss/take-profit, funding rate,
+insurance fund, ADL. In scope: margin and liquidation.
