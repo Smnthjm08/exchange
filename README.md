@@ -49,12 +49,12 @@ perp-v1/
 
 **Phase 0 — Shared types** (slides 75–77)
 
-- [ ] `common`: `Side::{Long,Short}`, `OrderType::{Limit,Market}`, `OrderStatus::{Open,Filled,Cancelled}`
-- [ ] `Collateral { available, locked }` — margin moves available → locked on order placement
-- [ ] `Order { order_id, market, side, qty, margin, order_type, price, status }`
-- [ ] `Position { market, side, qty, margin, average_price, liquidation_price, pnl }`
-- [ ] `Fill { maker, taker, market, qty, price, long, short }` — four user refs, not one
-- [ ] `Decimal` everywhere for price/qty/margin; never `f64`
+- [x] `common`: `Side::{Long,Short}`, `OrderType::{Limit,Market}`, `OrderStatus::{Open,Filled,Cancelled}`
+- [x] `Collateral { available, locked }` — margin moves available → locked on order placement
+- [x] `Order { order_id, market, side, qty, margin, order_type, price, status }`
+- [x] `Position { market, side, qty, margin, average_price, liquidation_price, pnl }`
+- [x] `Fill { maker, taker, market, qty, price, long, short }` — four user refs, not one
+- [x] `Decimal` everywhere for price/qty/margin; never `f64`
 
 **Phase 1 — Price feed** (slide 78)
 
@@ -101,9 +101,18 @@ perp-v1/
 
 **Phase 6 — Persistence** (our addition, not in the deck)
 
-- [ ] `db`: sqlx migrations for `users`, `orders`, `fills`, `closed_positions`
+- [ ] `db`: sqlx migrations for `users`, `orders`, `fills`, `closed_positions` — `users` table in
+      (`migrations/20260817181209_create_users.sql`); `orders`, `fills`, `closed_positions` still open
 - [ ] Write-behind from the engine — never block matching on a DB round trip
-- [ ] Hash passwords (the deck stores `password: 123123` plaintext as a teaching shortcut)
+- [ ] Hash passwords (the deck stores `password: 123123` plaintext as a teaching shortcut) — `/auth`
+      login route exists as a stub and currently echoes the plaintext payload back, no hashing yet
+
+**Scaffolding done so far**
+
+- [x] `db::init_db` — `sqlx::PgPool` connection via `PgPoolOptions`, `DATABASE_URL` from env
+- [x] `api`: runs `sqlx::migrate!` against `../../migrations` on startup before serving
+- [x] `api`: routes nested under `/api/v1` — `GET /health`, `POST /auth` (stub, not wired to `db` yet)
+- [x] `.env.example` added documenting `DATABASE_URL`
 
 **Explicitly out of scope for V1** (slide 67): stop-loss/take-profit, funding rate,
 insurance fund, ADL. In scope: margin and liquidation.
