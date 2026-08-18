@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4.45"
 rust_decimal = "1.42.1"
 serde = "1.0.229"
 uuid = { version = "1.24.0", features = ["v4", "serde"] }
