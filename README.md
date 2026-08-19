@@ -1,13 +1,17 @@
 # Perps
 
-- **Ownership & borrowing** — you'll share the orderbook/positions state across async tasks, so `&`, `&mut`, and move semantics need to be second nature
-- **`Arc<RwLock<T>>` / `Arc<Mutex<T>>`** — for the in-memory orderbook and price state shared between the websocket task, matching engine, and API handlers
-- **`tokio`** — async runtime: spawning tasks, `select!`, intervals (for the liquidation-check loop)
-- **Channels** — `tokio::sync::mpsc` (price feed → engine) and `broadcast` (engine → multiple listeners, e.g. websocket clients later)
-- **Traits & generics** — lightly, for abstracting exchange price sources if you support more than Binance later
-- **Error handling** — `Result`, `?`, `thiserror` for typed errors, `anyhow` for glue code
-- **`serde`** — serializing structs to JSON for the API and to/from Postgres rows
-- **`rust_decimal`** — never use `f64` for money/price/qty; use `Decimal`
+A perpetuals exchange in Rust — in-memory orderbook + matching engine, Postgres for
+persistence, Binance price feed. Built off the deck in [`docs/phase-01.pdf`](docs/phase-01.pdf),
+which holds the full spec and the phase-by-phase breakdown.
+
+Rust surface area this exercises:
+
+- **Ownership & borrowing** — orderbook/position state shared across async tasks
+- **`Arc<RwLock<T>>`** — the in-memory orderbook and price state, shared between the ws task, engine, and handlers
+- **`tokio`** — task spawning, `select!`, intervals (the liquidation loop)
+- **Channels** — `mpsc` (feed → engine) and `broadcast` (engine → ws clients)
+- **Error handling** — `Result`, `?`, `thiserror` for typed errors, `anyhow` for glue
+- **`rust_decimal`** — never `f64` for money/price/qty
 
 ## Tech stack
 
@@ -21,98 +25,75 @@
 | Serialization          | `serde`, `serde_json`                    |
 | Decimal math           | `rust_decimal`                           |
 | IDs                    | `uuid`                                   |
-| Logging                | `tracing` + `tracing-subscriber`         |
-| Config                 | `dotenvy`                                |
-| Migrations             | `sqlx-cli` migrations                    |
+| Password hashing       | `argon2`                                 |
+| Auth tokens            | `jsonwebtoken` (HS256)                   |
+| Migrations             | `sqlx-cli`                               |
 
 ## Workspace structure
 
 ```text
 perp-v1/
-├── Cargo.toml                # workspace root
 ├── crates/
-│   ├── api/                  # axum HTTP server, route handlers
-│   ├── engine/                # matching engine + liquidation loop (in-memory)
-│   ├── feed/                  # binance/backpack ws price feed
-│   ├── db/                    # sqlx models, queries, migrations
-│   └── common/                 # shared types: Order, Position, Fill, Market
+│   ├── api/       # axum HTTP server, route handlers
+│   ├── engine/    # matching engine + liquidation loop (in-memory)
+│   ├── feed/      # binance/backpack ws price feed
+│   ├── db/        # sqlx models + queries
+│   └── common/    # shared types: Order, Position, Fill, Market
 ├── migrations/
 └── .env
 ```
 
-- `common` holds the core structs (`Order`, `Position`, `Fill`, `Side::{Long,Short}`) so every crate shares one source of truth
-- `engine` owns the live orderbook + positions in memory (`Arc<RwLock<...>>`), and is the only thing allowed to mutate them
-- `api` just calls into `engine` and `db` — no business logic in handlers
+- `common` holds the core structs so every crate shares one source of truth
+- `engine` owns the live orderbook + positions, and is the only thing allowed to mutate them
+- `api` calls into `engine` and `db` — no business logic in handlers
 - `feed` pushes price ticks into a channel that `engine` consumes
 
-## V1 task breakdown (mapped to slides)
+## Status
 
-**Phase 0 — Shared types** (slides 75–77)
+- [x] Shared types
+- [x] DB pool, `users` migration, user queries
+- [x] Auth — argon2 + JWT
+- [ ] Price feed *(next)*
+- [ ] Orderbook
+- [ ] Matching engine
+- [ ] Liquidation
+- [ ] Trading REST routes
+- [ ] Auth middleware
 
-- [x] `common`: `Side::{Long,Short}`, `OrderType::{Limit,Market}`, `OrderStatus::{Open,Filled,Cancelled}`
-- [x] `Collateral { available, locked }` — margin moves available → locked on order placement
-- [x] `Order { order_id, market, side, qty, margin, order_type, price, status }`
-- [x] `Position { market, side, qty, margin, average_price, liquidation_price, pnl }`
-- [x] `Fill { maker, taker, market, qty, price, long, short }` — four user refs, not one
-- [x] `Decimal` everywhere for price/qty/margin; never `f64`
+## API
 
-**Phase 1 — Price feed** (slide 78)
+Everything is nested under `/api/v1`. Success bodies share one envelope:
+`{ message, success, data }`. Errors are currently a bare plaintext string + status code.
 
-- [ ] `feed` crate: `tokio-tungstenite` connection to the Binance SOL ticker
-- [ ] Deserialize into `common::Tick`, push into an `mpsc` channel
-- [ ] Feeds `Orderbook::index_price` — kept distinct from `last_traded_price` (slide 76)
-- [ ] `src/bin/probe.rs` to eyeball the stream before the engine exists
+| Route                | Success | Errors                                       |
+| -------------------- | ------- | -------------------------------------------- |
+| `GET /health`        | `200`   | —                                            |
+| `POST /auth/signup`  | `201`   | `409` email taken                            |
+| `POST /auth/login`   | `200`   | `401` unknown email or bad password          |
 
-**Phase 2 — Orderbook state** (slide 76)
+```jsonc
+// POST /auth/signup  { "username": "sam", "email": "sam@example.com", "password": "hunter2" }
+// POST /auth/login   { "email": "sam@example.com", "password": "hunter2" }
+{
+  "message": "user created successfully",
+  "success": true,
+  "data": { "access_token": "<jwt>", "id": "<uuid>", "username": "sam", "email": "sam@example.com" }
+}
+```
 
-- [ ] Price-level aggregation, not a flat order list:
-      `Level { available_qty, open_orders: Vec<OpenOrder> }`
-- [ ] `Orderbook { bids: BTreeMap<Decimal, Level>, asks: BTreeMap<Decimal, Level>,
-    last_traded_price, index_price }` — `BTreeMap` keeps levels sorted for walking
-- [ ] `Orderbooks = HashMap<Market, Orderbook>` — SOL **and** ETH from the start
-- [ ] `OpenOrder { user_id, qty, filled_qty, order_id, created_at }`
+Rough edges:
 
-**Phase 3 — Matching engine** (slides 40–54)
+- error responses don't match the JSON envelope
+- a non-PHC `password` row fails login with `500`, not `401`
+- `encode_jwt`/`decode_jwt` `unwrap()` a missing `JWT_SECRET`
+- no rate limiting
 
-- [ ] `POST /create` locks `equity` from the body as margin, then places long/short
-- [ ] Match against the opposite side, walking levels by price using `available_qty`
-- [ ] On match → emit `Fill`, update both users' `positions` + `collateral`
-- [ ] Closing a position = opening the opposite side for the same qty (slides 44–45)
-- [ ] Maintain the zero-sum invariant: open longs == open shorts at all times (slide 53)
+## Running it
 
-**Phase 4 — Liquidation** (slides 55–66)
+```bash
+cp .env.example .env    # DATABASE_URL, JWT_SECRET
+cargo run -p api        # runs migrations on boot, binds 0.0.0.0:3000
+```
 
-- [ ] Compute and store `liquidation_price` on the position when it opens (slide 55) —
-      the tick loop compares against this instead of recomputing equity per position
-- [ ] Background `tokio::time::interval` loop checks open positions against `index_price`
-- [ ] On liquidation: market-close by walking the opposite side across levels
-      (slide 61–62: `90.20*100 + 90.19*400 + 90.18*1285`), realize the loss
-- [ ] Known edge case, deferred (slides 64–66): a thin book can close below the user's
-      collateral and drive the balance negative — no insurance fund in V1
-
-**Phase 5 — REST API** (slides 68–74)
-
-- [ ] `POST /create` — body: `{ price, qty, equity, type: "LONG"|"SHORT", market }`
-- [ ] `GET /positions/:market` (e.g. `SOL_PERP`)
-- [ ] `GET /orders/open`
-- [ ] `GET /fills`
-- [ ] `GET /orders/:marketId`
-- [ ] `GET /positions/closed/:marketId`
-
-**Phase 6 — Persistence** (our addition, not in the deck)
-
-- [ ] `db`: sqlx migrations for `users`, `orders`, `fills`, `closed_positions` — `users` table in
-      (`migrations/20260817181209_create_users.sql`); `orders`, `fills`, `closed_positions` still open
-- [ ] Write-behind from the engine — never block matching on a DB round trip
-- [ ] Hash passwords (the deck stores `password: 123123` plaintext as a teaching shortcut) — `/auth`
-      login route exists as a stub and currently echoes the plaintext payload back, no hashing yet
-
-**Scaffolding done so far**
-
-- [x] `db::init_db` — `sqlx::PgPool` connection via `PgPoolOptions`, `DATABASE_URL` from env
-- [x] `api`: runs `sqlx::migrate!` against `../../migrations` on startup before serving
-- [x] `api`: routes nested under `/api/v1` — `GET /health`, `POST /auth` (stub, not wired to `db` yet)
-- [x] `.env.example` added documenting `DATABASE_URL`
-
-**Explicitly out of scope for V1** (slide 67): stop-loss/take-profit, funding rate,
-insurance fund, ADL. In scope: margin and liquidation.
+`sqlx::query!` is compile-time checked, so `DATABASE_URL` must point at a reachable database
+for `cargo check` to pass.
