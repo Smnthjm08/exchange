@@ -6,6 +6,7 @@ use db::init_db;
 use sqlx::PgPool;
 pub mod routes;
 pub mod utils;
+pub mod middlewares;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(routes::health_routes::get_health))
         .route("/auth/login", post(routes::auth_routes::login_request))
         .route("/auth/signup", post(routes::auth_routes::signup_request))
+        .route("/user/profile", get(routes::user_routes::get_user_profile))
         .with_state(state);
 
     let app = Router::new().route("/", get(root)).nest("/api/v1", api);

@@ -18,4 +18,4 @@ argon2 = { version = "0.5.3", features = ["std"] }
 uuid = { version = "1.24.1", features = ["v4", "serde"] }
 jsonwebtoken ={ version = "11.0.0", features = ["aws_lc_rs"] }
 
-chrono = "0.4.45"
+chrono = { version = "0.4.45", features = ["serde"] }

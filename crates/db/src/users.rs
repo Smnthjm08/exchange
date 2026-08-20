@@ -24,6 +24,19 @@ pub async fn get_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User
     }))
 }
 
+pub async  fn get_user_by_id(pool: &PgPool, id: &Uuid) -> Result<Option<User>, sqlx::Error>{
+    let row = sqlx::query!(
+        r#"
+        SELECT id, username, password, email, created_at, updated_at
+        FROM users
+        WHERE id = $1
+        "#,
+        id
+    ).fetch_optional(pool).await?;
+
+    Ok(row.map(|r| User { id: r.id, username: r.username, email: r.email, password: r.password, created_at: r.created_at, updated_at: r.updated_at }))
+}
+
 pub async fn create_user(
     pool: &PgPool,
     username: &str,
