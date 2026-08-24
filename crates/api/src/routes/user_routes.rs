@@ -40,3 +40,7 @@ pub async fn get_user_profile(
         },
     }))
 }
+
+
+pub async fn get_user_balances(    State(state): State<AppState>,
+    auth_user: AuthUser,){}

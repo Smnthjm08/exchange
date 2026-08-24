@@ -36,6 +36,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/auth/login", post(routes::auth_routes::login_request))
         .route("/auth/signup", post(routes::auth_routes::signup_request))
         .route("/user/profile", get(routes::user_routes::get_user_profile))
+        .route("/user/balances", get(routes::user_routes::get_user_balances))
+        // In this app, onramp should mean: add fiat or crypto into the user’s exchange account, then credit their internal balance after payment confirmation.
+        .route("/onramp", get(routes::user_routes::get_user_balances))
         .with_state(state);
 
     let app = Router::new().route("/", get(root)).nest("/api/v1", api);

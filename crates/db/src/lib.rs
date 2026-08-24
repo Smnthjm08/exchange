@@ -1,5 +1,6 @@
 use sqlx::{PgPool, postgres::PgPoolOptions};
 pub mod users;
+pub mod user_balances;
 
 pub async fn init_db(database_url: &str) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
