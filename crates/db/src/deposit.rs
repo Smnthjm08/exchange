@@ -53,16 +53,22 @@ pub async fn create_pending_deposit(
 }
 
 pub async fn confirm_deposit(pool: &PgPool, external_ref: &str) -> Result<Deposit, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     let updated = sqlx::query!(
         r#"UPDATE deposits SET status='confirmed', updated_at=NOW()
            WHERE external_ref=$1 AND status='pending'
            RETURNING id, user_id, asset_id, amount, external_ref, created_at, updated_at"#,
         external_ref
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
     if let Some(row) = updated {
+        crate::user_assets::credit_available(&mut tx, &row.user_id, &row.asset_id, row.amount)
+            .await?;
+        tx.commit().await?;
+
         return Ok(Deposit {
             id: row.id,
             user_id: row.user_id,
@@ -80,13 +86,15 @@ pub async fn confirm_deposit(pool: &PgPool, external_ref: &str) -> Result<Deposi
            FROM deposits WHERE external_ref=$1"#,
         external_ref
     )
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?
     .ok_or(sqlx::Error::RowNotFound)?;
 
     if existing.status != "confirmed" {
         return Err(sqlx::Error::RowNotFound);
     }
+
+    tx.rollback().await?;
 
     Ok(Deposit {
         id: existing.id,
