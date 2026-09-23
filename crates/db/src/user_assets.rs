@@ -1,5 +1,5 @@
 use common::types::UserAssets;
-use sqlx::PgPool;
+use sqlx::{PgPool, types::Decimal};
 use uuid::Uuid;
 
 pub async fn get_user_assets_by_user_id(
@@ -25,4 +25,19 @@ pub async fn get_user_assets_by_user_id(
             updated_at: r.updated_at,
         })
         .collect())
+}
+
+
+pub async fn credit_available(
+    tx: &mut sqlx::PgConnection,
+    user_id: &Uuid, asset_id: &Uuid, amount: Decimal,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"INSERT INTO user_assets (id, user_id, asset_id, available, locked)
+           VALUES ($1, $2, $3, $4, 0)
+           ON CONFLICT (user_id, asset_id)
+           DO UPDATE SET available = user_assets.available + EXCLUDED.available, updated_at = NOW()"#,
+        Uuid::new_v4(), user_id, asset_id, amount
+    ).execute(tx).await?;
+    Ok(())
 }
