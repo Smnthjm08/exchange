@@ -1,6 +1,6 @@
 pub enum Side {
-    Long,
-    Short,
+    Buy,
+    Sell,
 }
 
 pub enum OrderType {

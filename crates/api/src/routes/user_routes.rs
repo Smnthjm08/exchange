@@ -1,9 +1,10 @@
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{extract::State, http::StatusCode, Json};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
+use sqlx::types::Decimal;
 use uuid::Uuid;
 
-use crate::{AppState, middlewares::auth_middlewares::AuthUser};
-
+use crate::{middlewares::auth_middlewares::AuthUser, AppState};
 
 #[derive(Serialize)]
 pub struct UserProfileResponse {
@@ -41,6 +42,40 @@ pub async fn get_user_profile(
     }))
 }
 
+#[derive(Serialize)]
+pub struct UserAssetsData {
+    pub asset_id: Uuid,
+    pub available: Decimal,
+    pub locked: Decimal,
+    pub updated_at: DateTime<Utc>,
+}
 
-pub async fn get_user_balances(    State(state): State<AppState>,
-    auth_user: AuthUser,){}
+#[derive(Serialize)]
+pub struct UserAssetsResponse {
+    message: String,
+    success: bool,
+    data: Vec<UserAssetsData>,
+}
+
+pub async fn get_user_assets(
+    State(state): State<AppState>,
+    auth_user: AuthUser,
+) -> Result<Json<UserAssetsResponse>, (StatusCode, String)> {
+    let balances = db::user_assets::get_user_assets_by_user_id(&state.db, &auth_user.id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(UserAssetsResponse {
+        message: "successfully fetched user balances".to_string(),
+        success: true,
+        data: balances
+            .into_iter()
+            .map(|b| UserAssetsData {
+                asset_id: b.asset_id,
+                available: b.available,
+                locked: b.locked,
+                updated_at: b.updated_at,
+            })
+            .collect(),
+    }))
+}
