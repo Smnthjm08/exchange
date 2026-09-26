@@ -2,8 +2,10 @@ pub mod auth_routes;
 pub mod health_routes;
 pub mod user_routes;
 pub mod deposit_routes;
+pub mod order_routes;
 
 pub use auth_routes::{login_request,signup_request};
 pub use health_routes::get_health;
 pub use user_routes::{get_user_profile, get_user_assets};
 pub use deposit_routes::{create_mock_deposit, confirm_mock_deposit};
+pub use order_routes::{create_orders, cancel_orders};

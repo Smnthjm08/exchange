@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, Json};
+use chrono::{DateTime, Utc};
 use common::types::DepositStatus;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Decimal;
@@ -24,6 +25,25 @@ pub struct DepositData {
     pub amount: Decimal,
     pub status: String,
     pub external_ref: String,
+}
+
+#[derive(Serialize)]
+pub struct DepositsData {
+    pub id: Uuid,
+    pub asset_id: Uuid,
+    pub user_id: Uuid,
+    pub amount: Decimal,
+    pub status: String,
+    pub external_ref: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>
+}
+
+#[derive(Serialize)]
+pub struct DepositsResponse{
+    message: String,
+    success: bool,
+    data: Vec<DepositsData>
 }
 
 #[derive(Serialize)]
@@ -103,5 +123,29 @@ pub async fn confirm_mock_deposit(
             status: status_str(&deposit.status).to_string(),
             external_ref: deposit.external_ref,
         },
+    }))
+}
+
+pub async fn get_user_deposits(State(app_state): State<AppState>, auth_user: AuthUser) -> Result<Json<DepositsResponse>, (StatusCode, String)>{
+    let deposits = db::deposit::get_user_deposits(&app_state.db, auth_user.id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(DepositsResponse{
+        message: "successfully fetched deposits".to_string(),
+        success: true,
+        data: deposits
+            .into_iter()
+            .map(|d| DepositsData {
+                id: d.id,
+                asset_id: d.asset_id,
+                user_id: d.user_id,
+                amount: d.amount,
+                status: status_str(&d.status).to_string(),
+                external_ref: d.external_ref,
+                created_at: d.created_at,
+                updated_at: d.updated_at,
+            })
+            .collect(),
     }))
 }

@@ -107,3 +107,30 @@ pub async fn confirm_deposit(pool: &PgPool, external_ref: &str) -> Result<Deposi
         updated_at: existing.updated_at,
     })
 }
+
+pub async fn get_user_deposits(pool: &PgPool, user_id: Uuid) -> Result<Vec<Deposit>, sqlx::Error> {
+    let rows = sqlx::query!(
+        r#"SELECT id, user_id, asset_id, amount, status, external_ref, created_at, updated_at
+           FROM deposits WHERE user_id = $1"#,
+        user_id
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| Deposit {
+            id: r.id,
+            user_id: r.user_id,
+            asset_id: r.asset_id,
+            amount: r.amount,
+            status: match r.status.as_str() {
+                "confirmed" => DepositStatus::Confirmed,
+                _ => DepositStatus::Pending,
+            },
+            external_ref: r.external_ref,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        })
+        .collect())
+}

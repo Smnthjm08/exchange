@@ -4,6 +4,8 @@ use axum::{
 };
 use db::init_db;
 use sqlx::PgPool;
+
+use crate::routes::deposit_routes;
 pub mod middlewares;
 pub mod routes;
 pub mod utils;
@@ -30,14 +32,19 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { db: pool };
 
-    // build our application with a route
     let mut api = Router::new()
         .route("/health", get(routes::health_routes::get_health))
         .route("/auth/login", post(routes::auth_routes::login_request))
         .route("/auth/signup", post(routes::auth_routes::signup_request))
         .route("/user/profile", get(routes::user_routes::get_user_profile))
-        .route("/user/balances", get(routes::user_routes::get_user_assets));
-    // CREATE and CANCEL ORDER
+        .route("/user/balances", get(routes::user_routes::get_user_assets))
+        .route(
+            "/user/deposits",
+            get(routes::deposit_routes::get_user_deposits),
+        )
+        // CREATE and CANCEL ORDER
+        .route("/order", post(deposit_routes::create_mock_deposit))
+        .route("/order/cancel", post(deposit_routes::create_mock_deposit));
 
     if std::env::var("MOCK_DEPOSITS_ENABLED").is_ok() {
         api = api
@@ -55,7 +62,6 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new().route("/", get(root)).nest("/api/v1", api);
 
-    // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("app running");
     axum::serve(listener, app).await.unwrap();
