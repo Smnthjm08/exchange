@@ -41,3 +41,17 @@ pub async fn credit_available(
     ).execute(tx).await?;
     Ok(())
 }
+
+// Check and lock in one statement: a separate SELECT-then-UPDATE lets two conc req
+pub async fn lock_balance(
+    tx: &mut sqlx::PgConnection,
+    user_id: &Uuid, asset_id: &Uuid, amount: Decimal,
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query!(
+        r#"UPDATE user_assets
+           SET available = available - $3, locked = locked + $3, updated_at = NOW()
+           WHERE user_id = $1 AND asset_id = $2 AND available >= $3"#,
+        user_id, asset_id, amount
+    ).execute(tx).await?;
+    Ok(result.rows_affected() == 1)
+}

@@ -1,6 +1,5 @@
 use axum::{
-    routing::{get, post},
-    Router,
+    Router, routing::{delete, get, post},
 };
 use db::init_db;
 use sqlx::PgPool;
@@ -42,8 +41,8 @@ async fn main() -> anyhow::Result<()> {
             get(routes::deposit_routes::get_user_deposits),
         )
         // CREATE and CANCEL ORDER
-        .route("/order", post(routes::deposit_routes::create_mock_deposit))
-        .route("/order/cancel", post(routes::deposit_routes::create_mock_deposit));
+        .route("/orders", post(routes::order_routes::create_orders))
+        .route("/orders/{id}", delete(routes::order_routes::cancel_orders));
 
     if std::env::var("MOCK_DEPOSITS_ENABLED").is_ok() {
         api = api

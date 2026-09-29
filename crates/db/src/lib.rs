@@ -2,6 +2,8 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 pub mod users;
 pub mod user_assets;
 pub mod deposit;
+pub mod markets;
+pub mod orders;
 
 pub async fn init_db(database_url: &str) -> Result<PgPool, sqlx::Error> {
     PgPoolOptions::new()
